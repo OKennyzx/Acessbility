@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Guia Acessível</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior-y: contain;
+            touch-action: manipulation;
+        }
+        .main-container { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+        .camera-section, .control-section { height: 50%; width: 100%; position: relative; overflow: hidden; }
+        #video { display: block; width: 100%; height: 100%; object-fit: cover; }
+        .interactive-area {
+            width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 2rem; font-weight: bold;
+            color: white; border: none; cursor: pointer;
+            transition: background-color 0.3s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .result-area {
+            padding: 1.5rem; text-align: left; overflow-y: auto;
+            background-color: #f3f4f6; color: #1f2937;
+            font-size: 1.25rem; line-height: 1.6;
+        }
+        #loading-overlay {
+            position: absolute; inset: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 10;
+        }
+        .spinner {
+            width: 56px; height: 56px;
+            border: 6px solid #FFF;
+            border-bottom-color: #4f46e5;
+            border-radius: 50%;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #initial-overlay {
+            position: absolute; inset: 0; z-index: 20;
+            background-color: rgba(31, 41, 55, 0.95); color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-800">
+
+    <div id="main-container" class="main-container">
+        <!-- Top 50%: Camera View -->
+        <section class="camera-section bg-gray-900">
+            <video id="video" playsinline></video>
+            <div id="loading-overlay" class="hidden">
+                <div class="text-center">
+                    <div class="spinner mb-4"></div>
+                    <p class="text-white text-xl font-semibold">Analisando...</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Bottom 50%: Interactive Area -->
+        <section id="control-section" class="control-section">
+            <button id="identifyButton" class="interactive-area bg-indigo-600 hover:bg-indigo-700" aria-label="Identificar produto na câmera">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mr-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Identificar
+            </button>
+            <div id="resultArea" class="interactive-area result-area hidden" role="status" aria-live="assertive"></div>
+        </section>
+    </div>
+    
+    <!-- Initial overlay to ask for camera permission -->
+    <div id="initial-overlay" class="flex flex-col justify-center items-center text-center p-8">
+        <h1 class="text-4xl font-bold mb-4">Assistente de Produtos</h1>
+        <p class="text-xl mb-8">Toque na tela para iniciar a câmera e começar a usar o assistente.</p>
+        <div id="start-error" class="text-red-400 text-lg"></div>
+    </div>
+
+    <canvas id="canvas" class="hidden"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const identifyButton = document.getElementById('identifyButton');
+        const resultArea = document.getElementById('resultArea');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const initialOverlay = document.getElementById('initial-overlay');
+        const startErrorDiv = document.getElementById('start-error');
+        const canvas = document.getElementById('canvas');
+        
+        let stream;
+        let longPressTimer;
+        let isLocked = false;
+
+        // Start camera
+        async function startCamera() {
+            try {
+                if (stream) return;
+                const constraints = {
+                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+                };
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                await video.play();
+                initialOverlay.classList.add('hidden');
+                speakMessage("Câmera pronta.");
+            } catch (err) {
+                console.error("Erro ao acessar câmera:", err);
+                startErrorDiv.textContent = "Erro ao acessar a câmera. Verifique permissões.";
+                speakMessage("Erro ao iniciar a câmera.");
+            }
+        }
+
+        // Text-to-speech
+        function speakMessage(message, onEndCallback) {
+            if (!('speechSynthesis' in window)) {
+                if(onEndCallback) onEndCallback();
+                return;
+            }
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(message);
+            utterance.lang = 'pt-BR';
+            utterance.onstart = () => { isLocked = true; };
+            utterance.onend = () => { isLocked = false; if (onEndCallback) onEndCallback(); };
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function vibrate(ms = 150) {
+            if (navigator.vibrate) navigator.vibrate(ms);
+        }
+
+        function resetUI() {
+            if (isLocked) return;
+            resultArea.classList.add('hidden');
+            identifyButton.classList.remove('hidden');
+            identifyButton.disabled = false;
+            vibrate(80); // vibra rápido no reset
+            speakMessage("Pronto para o próximo item.");
+        }
+
+        function setupLongPressReset() {
+            resultArea.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (isLocked) return;
+                longPressTimer = setTimeout(resetUI, 2000);
+            }, { passive: false });
+            resultArea.addEventListener('touchend', () => clearTimeout(longPressTimer));
+            resultArea.addEventListener('mousedown', () => {
+                if (isLocked) return;
+                longPressTimer = setTimeout(resetUI, 2000);
+            });
+            resultArea.addEventListener('mouseup', () => clearTimeout(longPressTimer));
+        }
+
+        // Identify product
+        async function identifyProduct() {
+            if (!stream || video.readyState !== 4 || isLocked) {
+                speakMessage("A câmera não está pronta.");
+                return;
+            }
+
+            loadingOverlay.classList.remove('hidden');
+            identifyButton.disabled = true;
+            isLocked = true;
+
+            vibrate(); // vibra ao iniciar análise
+            speakMessage("Analisando produto...");
+
+            try {
+                const context = canvas.getContext('2d');
+                canvas.width = 640;  
+                canvas.height = 480;
+                context.drawImage(video, 0, 0, 640, 480);
+
+                canvas.toBlob(async (blob) => {
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                        const base64ImageData = reader.result.split(',')[1];
+                        const prompt = "Descreva este produto em português do Brasil de forma clara e concisa para uma pessoa idosa ou cega. O que é e para que serve? Comece a resposta com 'O produto identificado é...'";
+
+                        const payload = {
+                            contents: [{
+                                role: "user",
+                                parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: base64ImageData }}]
+                            }],
+                        };
+
+                        const apiKey = ""; // NÃO DEIXAR exposto em produção
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) throw new Error(`Erro na API: ${response.status}`);
+                        const result = await response.json();
+                        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                        if (text) {
+                            resultArea.textContent = text;
+                            identifyButton.classList.add('hidden');
+                            resultArea.classList.remove('hidden');
+                            speakMessage(text, setupLongPressReset);
+                        } else {
+                            throw new Error("Sem texto retornado pela API");
+                        }
+                    };
+                    reader.readAsDataURL(blob);
+                }, "image/jpeg", 0.7);
+
+            } catch (error) {
+                console.error("Erro:", error);
+                vibrate(300); // vibração longa para erro
+                const errorMessage = "Ocorreu um erro ao identificar o produto.";
+                resultArea.textContent = errorMessage;
+                speakMessage(errorMessage, setupLongPressReset);
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+
+        // Event listeners
+        initialOverlay.addEventListener('click', startCamera);
+        identifyButton.addEventListener('click', identifyProduct);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                startErrorDiv.textContent = "Seu navegador não suporta câmera.";
+                initialOverlay.removeEventListener('click', startCamera);
+            }
+        });
+    </script>
+</body>
+</html>
