@@ -1,0 +1,32 @@
+body {
+    font-family: 'Inter', sans-serif;
+  }
+  .main-container { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+  .camera-section, .control-section { height: 50%; width: 100%; position: relative; overflow: hidden; }
+  #video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .interactive-area {
+    width: 100%; height: 100%;
+    display: flex; justify-content: center; align-items: center;
+    font-size: 2rem; font-weight: bold;
+    color: white; border: none; cursor: pointer;
+  }
+  .result-area {
+    padding: 1.5rem; text-align: left; overflow-y: auto;
+    background-color: #f3f4f6; color: #1f2937;
+    font-size: 1.25rem; line-height: 1.6;
+  }
+  #loading-overlay {
+    position: absolute; inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex; justify-content: center; align-items: center;
+    z-index: 10;
+  }
+  .spinner {
+    width: 56px; height: 56px;
+    border: 6px solid #FFF;
+    border-bottom-color: #4f46e5;
+    border-radius: 50%;
+    animation: rotation 1s linear infinite;
+  }
+  @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  
