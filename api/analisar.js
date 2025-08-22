@@ -20,4 +20,12 @@ export default async function handler(req, res) {
     console.error("Erro na API:", e);
     res.status(500).json({ error: "Erro interno do servidor" });
   }
+ } const apiSecret = process.env.API_SECRET;
+
+export default function handler(req, res) {
+  res.status(200).json({
+    message: 'Variável capturada com sucesso!',
+    secret: apiSecret // apenas para testes! (remova em produção)
+  });
 }
+
